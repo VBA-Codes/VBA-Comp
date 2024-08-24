@@ -1,0 +1,163 @@
+Dim OldScreenUpdating As Boolean
+Dim OldCalculation As XlCalculation
+Dim OldEnableEvents As Boolean
+
+Sub SalvarGeral()
+    Dim caminho As String
+    Dim nomePlanilha As String
+    Dim dataAtual As String
+    Dim wb As Workbook
+    Dim ws As Worksheet
+    Dim aba As Variant
+    Dim numeroDia As String
+    Dim nomeMes As String
+    Dim numeroMes As String
+    Dim abasParaSalvar As Variant
+    Dim abaAtual As String
+    Dim wbAberto As Workbook
+    Dim currentWorkbook As Workbook
+    Dim screenUpdating As Boolean
+    Dim calculation As XlCalculation
+    Dim enableEvents As Boolean
+    Dim retryCount As Integer
+    Dim success As Boolean
+    
+    ' Guardar referência ao workbook atual
+    Set currentWorkbook = ThisWorkbook
+    
+    ' Guardar as configurações atuais do Excel
+    screenUpdating = Application.screenUpdating
+    calculation = Application.calculation
+    enableEvents = Application.enableEvents
+    
+    ' Desativar atualizações de tela e eventos para melhorar o desempenho
+    Application.screenUpdating = False
+    Application.calculation = xlCalculationManual
+    Application.enableEvents = False
+    
+    On Error GoTo RestoreSettings ' Garantir que as configurações sejam restauradas no final
+    
+    ' Extrair os componentes da data atual
+    numeroDia = Day(Date)
+    nomeMes = UCase(Left(Format(Date, "mmmm"), 3)) ' Pegar as três primeiras letras do mês em maiúsculas
+    numeroMes = Month(Date)
+    
+    ' Concatenar os componentes da data
+    dataAtual = Format(numeroMes, "00") & nomeMes & Format(numeroDia, "00")
+    
+    ' Obter o caminho e os nomes das abas da planilha "Prévias"
+    caminho = ThisWorkbook.Sheets("Prévias").Range("G11").Value
+    abasParaSalvar = Split(ThisWorkbook.Sheets("Prévias").Range("G13").Value, ",")
+    
+    ' Definir o nome da planilha com a data atual
+    nomePlanilha = dataAtual & ".xlsx"
+    
+    ' Verificar se o arquivo já está aberto e fechá-lo se necessário
+    Set wbAberto = IsWorkbookOpen(caminho & "\" & nomePlanilha)
+    If Not wbAberto Is Nothing Then
+        wbAberto.Close SaveChanges:=True
+    End If
+    
+    ' Criar uma nova planilha
+    Set wb = Workbooks.Add
+    
+    ' Copiar as abas especificadas
+    For Each aba In abasParaSalvar
+        abaAtual = Trim(aba)
+        If sheetExists(abaAtual) Then
+            ThisWorkbook.Sheets(abaAtual).Copy After:=wb.Sheets(wb.Sheets.Count)
+        End If
+    Next aba
+    
+    ' Converter tabelas em intervalos
+    For Each ws In wb.Worksheets
+        For Each tbl In ws.ListObjects
+            tbl.Unlist
+        Next tbl
+    Next ws
+    
+    ' Remover conexões de dados
+    For Each cn In wb.Connections
+        cn.Delete
+    Next cn
+    
+    ' Tentativa de salvar a nova planilha
+    retryCount = 0
+    success = False
+    Application.DisplayAlerts = False ' Desabilitar alertas para sobrescrever arquivo existente
+    
+    Do While Not success And retryCount < 3
+        On Error Resume Next
+        wb.SaveAs caminho & "\" & nomePlanilha, FileFormat:=xlOpenXMLWorkbook
+        If Err.Number = 0 Then
+            success = True
+        Else
+            retryCount = retryCount + 1
+            Application.Wait (Now + TimeValue("00:00:01")) ' Esperar 1 segundo antes de tentar novamente
+        End If
+        On Error GoTo 0
+    Loop
+    
+    Application.DisplayAlerts = True ' Habilitar alertas novamente
+    
+    ' Fechar a nova planilha sem salvar alterações no workbook original
+    wb.Close False
+    
+    ' Reabrir o arquivo salvo em segundo plano, se estava aberto anteriormente
+    If Not wbAberto Is Nothing Then
+        Application.Workbooks.Open (caminho & "\" & nomePlanilha)
+    End If
+    
+RestoreSettings:
+    ' Restaurar as configurações do Excel
+    Application.screenUpdating = screenUpdating
+    Application.calculation = calculation
+    Application.enableEvents = enableEvents
+    
+    ' Focar de volta no workbook original
+    currentWorkbook.Activate
+    
+    ' Verificar se ocorreu um erro
+    If Err.Number <> 0 Then
+        MsgBox "Ocorreu um erro: " & Err.Description
+    End If
+End Sub
+
+Function sheetExists(sheetName As String) As Boolean
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets(sheetName)
+    If Not ws Is Nothing Then
+        sheetExists = True
+    Else
+        sheetExists = False
+    End If
+    On Error GoTo 0
+End Function
+
+Function IsWorkbookOpen(wbName As String) As Workbook
+    Dim wb As Workbook
+    On Error Resume Next
+    Set wb = Workbooks(Dir(wbName))
+    On Error GoTo 0
+    Set IsWorkbookOpen = wb
+End Function
+
+Sub DesativarConfiguracoes()
+    ' Guardar as configurações atuais do Excel
+    OldScreenUpdating = Application.screenUpdating
+    OldCalculation = Application.calculation
+    OldEnableEvents = Application.enableEvents
+    
+    ' Desativar atualizações de tela e eventos para melhorar o desempenho
+    Application.screenUpdating = False
+    Application.calculation = xlCalculationManual
+    Application.enableEvents = False
+End Sub
+
+Sub RestaurarConfiguracoes()
+    ' Restaurar as configurações do Excel
+    Application.screenUpdating = OldScreenUpdating
+    Application.calculation = OldCalculation
+    Application.enableEvents = OldEnableEvents
+End Sub
